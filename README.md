@@ -27,7 +27,7 @@ Since March 2025, Google doesn't let apps read a whole Google Photos library. Th
 | Name | Value |
 |------|-------|
 | `DATABASE_URL` | Postgres connection string (e.g. Neon via the Vercel Marketplace) |
-| `BLOB_READ_WRITE_TOKEN` | Vercel Blob token (added automatically when you create a Blob store) |
+| `BLOB_STORE_ID` | Added automatically when you connect a Blob store. On Vercel, the app authenticates to Blob through Vercel's built-in OIDC token. Older stores give `BLOB_READ_WRITE_TOKEN` instead, which also works. |
 | `JWT_SECRET` | `openssl rand -base64 64` |
 | `ENCRYPTION_KEY` | `openssl rand -base64 32` (encrypts stored Google tokens) |
 | `APP_URL` | `http://localhost:3000` locally, your deployment URL in production |
@@ -37,7 +37,7 @@ Since March 2025, Google doesn't let apps read a whole Google Photos library. Th
 
 ```bash
 npm install
-cp .env.example .env.local   # then fill it in
+npx vercel link && npx vercel env pull .env.local   # or copy .env.example and fill it in
 npm run migrate              # needs DATABASE_URL in the environment
 npm run dev
 ```
