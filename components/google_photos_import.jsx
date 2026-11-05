@@ -43,7 +43,7 @@ export default function GooglePhotosImport({ google, can_edit, on_imported, on_d
 
             setStatus('importing');
             const time_zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-            const totals = { imported: 0, skipped: 0, failed: 0 };
+            const totals = { imported: 0, skipped: 0, over_cap: 0, before_birth: 0, failed: 0 };
             let page_token = null;
             do {
                 const result = await api(`/api/google/picker/${session.id}/import`, {
@@ -52,6 +52,8 @@ export default function GooglePhotosImport({ google, can_edit, on_imported, on_d
                 });
                 totals.imported += result.imported;
                 totals.skipped += result.skipped;
+                totals.over_cap += result.over_cap;
+                totals.before_birth += result.before_birth;
                 totals.failed += result.failed;
                 page_token = result.next_page_token;
                 setMessage(`Imported ${totals.imported} so far…`);
@@ -59,6 +61,8 @@ export default function GooglePhotosImport({ google, can_edit, on_imported, on_d
 
             const parts = [`Imported ${totals.imported} photo${totals.imported === 1 ? '' : 's'}`];
             if (totals.skipped) parts.push(`${totals.skipped} already here`);
+            if (totals.over_cap) parts.push(`${totals.over_cap} skipped (that week already has 10)`);
+            if (totals.before_birth) parts.push(`${totals.before_birth} from before your birth date`);
             if (totals.failed) parts.push(`${totals.failed} failed`);
             setMessage(`${parts.join(', ')}.`);
             setStatus('idle');

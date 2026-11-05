@@ -10,7 +10,7 @@ Built with Next.js 15 (App Router), Postgres, Vercel Blob and Tailwind. You sign
 
 ## How Google Photos works
 
-Since March 2025, Google doesn't let apps read a whole Google Photos library. This app uses the **Google Photos Picker API**: you pick photos (up to 2,000 at a time) in a Google window, and the app copies a resized version of each into Vercel Blob. It keeps copies because Google's links to picked photos stop working after about an hour. Videos are stored as a still frame. Removing a photo from the calendar never touches the original in Google Photos.
+Since March 2025, Google doesn't let apps read a whole Google Photos library. This app uses the **Google Photos Picker API**: you pick photos (up to 2,000 at a time) in a Google window, and the app copies a resized version of each (800 px on the long side, about 80 KB) into Vercel Blob. To keep storage bounded, at most 10 photos are kept per week; extra picks for a full week are skipped. Both limits are constants in `lib/life.js`. It keeps copies because Google's links to picked photos stop working after about an hour. Videos are stored as a still frame. Removing a photo from the calendar never touches the original in Google Photos.
 
 ## Setup
 

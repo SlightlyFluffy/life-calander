@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { query } from '@/lib/db.js';
 import { requireAuth } from '@/lib/session.js';
 import { uploadFile } from '@/lib/blob.js';
-import { localDateOf } from '@/lib/life_weeks.js';
+import { localDateOf, selectWithinWeeklyCap } from '@/lib/life_weeks.js';
+import { getCalendar, PHOTO_MAX_PX, MAX_PHOTOS_PER_WEEK } from '@/lib/life.js';
 import {
     getAccessToken, listPickedItems, downloadPickedItem, GoogleNotConnectedError
 } from '@/lib/google_photos.js';
@@ -42,9 +43,16 @@ export async function POST(request, { params }) {
         const body = await request.json().catch(() => ({}));
         const time_zone = typeof body.time_zone === 'string' ? body.time_zone : 'UTC';
 
+        const calendar = await getCalendar(user.user_id);
+        if (!calendar) {
+            return NextResponse.json({ error: 'Set your birth date before importing photos' }, { status: 400 });
+        }
+
         const access_token = await getAccessToken(user.user_id);
         const page = await listPickedItems(access_token, { session_id, page_token: body.page_token, page_size: PAGE_SIZE });
-        const items = (page?.mediaItems || []).filter((item) => item.mediaFile?.baseUrl && item.createTime);
+        const items = (page?.mediaItems || [])
+            .filter((item) => item.mediaFile?.baseUrl && item.createTime)
+            .map((item) => ({ ...item, date: localDateOf(item.createTime, time_zone) }));
 
         const { rows: existing } = items.length
             ? await query(
@@ -53,10 +61,24 @@ export async function POST(request, { params }) {
             )
             : { rows: [] };
         const already = new Set(existing.map((row) => row.source_id));
-        const fresh = items.filter((item) => !already.has(item.id));
+        const new_items = items.filter((item) => !already.has(item.id));
+
+        // Keep storage bounded: at most MAX_PHOTOS_PER_WEEK photos land on any one week.
+        const { rows: existing_days } = new_items.length
+            ? await query(
+                "SELECT to_char(taken_on, 'YYYY-MM-DD') AS day, count(*)::int AS count FROM life_photos WHERE user_id = $1 GROUP BY taken_on",
+                [user.user_id]
+            )
+            : { rows: [] };
+        const { accepted: fresh, over_cap, before_birth } = selectWithinWeeklyCap({
+            birth_date: calendar.birth_date,
+            items: new_items,
+            existing_days,
+            cap: MAX_PHOTOS_PER_WEEK
+        });
 
         const results = await runPool(fresh, CONCURRENCY, async (item) => {
-            const { buffer, content_type } = await downloadPickedItem(access_token, item);
+            const { buffer, content_type } = await downloadPickedItem(access_token, item, PHOTO_MAX_PX);
             const extension = EXTENSIONS[content_type] || 'jpg';
             const file = new File([buffer], `${item.id}.${extension}`, { type: content_type });
             const { pathname } = await uploadFile({ user_id: user.user_id, file, kind: 'life-photo' });
@@ -66,7 +88,7 @@ export async function POST(request, { params }) {
                  VALUES ($1, 'google_photos', $2, $3, $4, $5, $6, $7, $8, $9)
                  ON CONFLICT DO NOTHING`,
                 [
-                    user.user_id, item.id, item.createTime, localDateOf(item.createTime, time_zone),
+                    user.user_id, item.id, item.createTime, item.date,
                     item.type === 'VIDEO' ? 'VIDEO' : 'PHOTO', item.mediaFile.filename || null, pathname,
                     metadata.width ? Number(metadata.width) : null, metadata.height ? Number(metadata.height) : null
                 ]
@@ -78,7 +100,9 @@ export async function POST(request, { params }) {
 
         return NextResponse.json({
             imported: results.length - failed.length,
-            skipped: items.length - fresh.length,
+            skipped: items.length - new_items.length,
+            over_cap,
+            before_birth,
             failed: failed.length,
             next_page_token: page?.nextPageToken || null
         });
